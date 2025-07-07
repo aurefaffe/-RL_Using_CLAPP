@@ -3,10 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import os
-
-# Import the CLAPP model loader (assuming the CLAPP code is in a file called clapp_model.py)
-from utils.load_standalone_model import load_model as load_clapp_model
-
+from load_standalone_model import load_model
 # Option 1: CLAPP as Feature Extractor for Actor-Critic
 class ActCrit1Layer(nn.Module):
     def __init__(self, env, clapp_model_path, gamma=0.99, freeze_clapp=True):
@@ -14,8 +11,10 @@ class ActCrit1Layer(nn.Module):
         self.env = env
         self.gamma = gamma
         
-        # Load CLAPP model
-        self.clapp_model = load_clapp_model(clapp_model_path, option=0)
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        
+        # Load CLAPP model and move to device
+        self.clapp_model = load_model(clapp_model_path, option=0).to(self.device)
         
         # Freeze CLAPP parameters if using as feature extractor
         if freeze_clapp:
@@ -23,9 +22,8 @@ class ActCrit1Layer(nn.Module):
                 param.requires_grad = False
         
         # Determine feature dimension from CLAPP
-        # CLAPP uses 27x27 patches, so we'll test with 92x92 (recommended size)
         with torch.no_grad():
-            test_input = torch.randn(1, 1, 92, 92)  # Recommended input size
+            test_input = torch.randn(1, 1, 92, 92).to(self.device)  # Move test input to device
             test_features = self.clapp_model(test_input)
             feature_dim = test_features.shape[1]
         
@@ -33,8 +31,8 @@ class ActCrit1Layer(nn.Module):
         print(f"CLAPP feature dimension: {feature_dim}, Action dimension: {action_dim}")
         
         # Actor and Critic heads
-        self.actor_fc = nn.Linear(feature_dim, action_dim)
-        self.critic_fc = nn.Linear(feature_dim, 1)
+        self.actor_fc = nn.Linear(feature_dim, action_dim).to(self.device)
+        self.critic_fc = nn.Linear(feature_dim, 1).to(self.device)
         
         # For storing episode data
         self.rewards = []
@@ -44,25 +42,25 @@ class ActCrit1Layer(nn.Module):
     
     def extract_features(self, state, keep_patches=False):
         state = torch.tensor(state, dtype=torch.float32)# Add batch dimension
-        state = state.view(state.shape[2], 1, state.shape[0], state.shape[1])  # Assuming state is (H, W, C)
+          # Move state to the correct device
+        state = state.view(state.shape[2], 1, state.shape[0], state.shape[1]).to(self.device) # Assuming state is (H, W, C)
         with torch.no_grad():
             features = self.clapp_model(state, all_layers=False, keep_patches=keep_patches)
         features = features[1] # Remove batch dimension if present
-        return features
+        return features.to(self.device)  # Ensure features are on the correct device
     
     def forward(self, state):
-        features = self.extract_features(state)
+        features = self.extract_features(state)  # Ensure features are on the correct device
         return self.actor_fc(features), self.critic_fc(features)
     
     def act(self, state):
         """Select an action using CLAPP features"""
         # Extract features using CLAPP
         action = None
-        features = self.extract_features(state)
         
         
         # Get action probabilities and state value
-        logits, state_value = self.actor_fc(features), self.critic_fc(features)
+        logits, state_value = self.forward(state)
         
         action_probs = F.softmax(logits, dim=-1)
         action_probs = action_probs.squeeze()  # Remove batch dimension if present
@@ -96,11 +94,11 @@ class ActCrit1Layer(nn.Module):
         for r in reversed(self.rewards):
             R = r + self.gamma * R
             returns.insert(0, R)
-        returns = torch.tensor(returns, dtype=torch.float32)
+        returns = torch.tensor(returns, dtype=torch.float32).to(self.device)  # Convert to tensor and move to device
         
         # Convert stored data to tensors
-        log_probs = torch.stack(self.log_probs)
-        state_values = torch.stack(self.state_values)
+        log_probs = torch.stack(self.log_probs).to(self.device)  # Ensure log_probs are on the correct device
+        state_values = torch.stack(self.state_values).to(self.device)  # Ensure state_values are on the correct device
         
         # Normalize returns
         if len(returns) > 1:
@@ -113,6 +111,7 @@ class ActCrit1Layer(nn.Module):
         actor_loss = -(log_probs * advantages).mean()
         critic_loss = advantages.pow(2).mean()
         total_loss = actor_loss + critic_loss
+        total_loss = total_loss.to(self.device) 
         
         # Update
         optimizer.zero_grad()
