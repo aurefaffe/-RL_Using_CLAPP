@@ -14,6 +14,8 @@ import gymnasium as gym
 
 class MyTmaze(MiniWorldEnv, utils.EzPickle):
     
+    def __init__(self, add_obstacles = False, add_visual_cue_object = True, intermediate_rewards = True,reward_left = False,
+                 probability_of_left = 0.0,latent_learning = False, add_visual_cue_image = True, left_arm = True, right_arm = True, **kwargs):
     def __init__(self, add_obstacles = False, add_visual_cue_object = False, intermediate_rewards = False,reward_left = True,
                  probability_of_left = 0.5,latent_learning = False, add_visual_cue_image = False, left_arm = True, right_arm = True, **kwargs):
         
