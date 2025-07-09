@@ -8,7 +8,7 @@ from tqdm import std
 import miniworld
 import gymnasium as gym
 
-from models import ActorModel, CriticModel
+from RL_algorithms.actor_critic.models import ActorModel, CriticModel
 
 def train_actor_critic(opt, env, device, encoder, gamma, models_dict, action_dim, clapp_feature_dim):
 
@@ -18,6 +18,10 @@ def train_actor_critic(opt, env, device, encoder, gamma, models_dict, action_dim
     else:
         print("not using eligibility traces")
         eligibility_traces = False
+    if opt.encoder == 'CLAPP':
+        resize = True
+    else:
+        resize = False
     
     
     actor = ActorModel(clapp_feature_dim, action_dim).to(device)
@@ -44,7 +48,10 @@ def train_actor_critic(opt, env, device, encoder, gamma, models_dict, action_dim
         state, info = env.reset()
      
         state = torch.tensor(state, device= device, dtype= torch.float32)
-        state = state.reshape(state.shape[2], 1, state.shape[0], state.shape[1]) 
+        if resize:
+            state = state.reshape(state.shape[2], 1, state.shape[0], state.shape[1])
+        else:
+            state = state.reshape(1, state.shape[2], state.shape[0], state.shape[1])
         features = encoder(state)
 
         done = False
@@ -74,7 +81,11 @@ def train_actor_critic(opt, env, device, encoder, gamma, models_dict, action_dim
             
 
             n_state_t = torch.tensor(n_state, device= device, dtype= torch.float32)
-            n_state_t = n_state_t.reshape(n_state_t.shape[2], 1, n_state_t.shape[0], n_state_t.shape[1]) 
+            if resize:
+                n_state_t = n_state_t.reshape(n_state_t.shape[2], 1, n_state_t.shape[0], n_state_t.shape[1]) 
+            else:
+                n_state_t = n_state_t.reshape(1, n_state_t.shape[2], n_state_t.shape[0], n_state_t.shape[1]) 
+
 
             
             features = encoder(n_state_t)
@@ -84,13 +95,13 @@ def train_actor_critic(opt, env, device, encoder, gamma, models_dict, action_dim
             
             if not eligibility_traces:
                 tot_loss_critic, tot_loss_actor = update_a2c(value, delayed_value, critic_optimizer, 
-                                                            advantage,logprob, actor_optimizer,actor, tot_loss_critic, tot_loss_actor)
+                                                            advantage,logprob, actor_optimizer, tot_loss_critic, tot_loss_actor)
             else:
                 update_eligibility(z_w, z_theta, t_delay_w, t_delay_theta, gamma, I,
                                    value, advantage, logprob, critic, actor ,opt.critic_lr, opt.actor_lr,step)
                 I = gamma * I
             
-            env.render()
+            # env.render()
 
             state = n_state_t
             total_reward += reward

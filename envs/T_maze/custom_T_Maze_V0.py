@@ -12,13 +12,19 @@ from miniworld.manual_control import ManualControl
 from gymnasium import utils, spaces
 import gymnasium as gym
 
-class myTmaze(MiniWorldEnv, utils.EzPickle):
+class MyTmaze(MiniWorldEnv, utils.EzPickle):
     
-    def __init__(self, add_obstacles = False, add_visual_cue_object = True, intermediate_rewards = True,reward_left = False,
-                 probability_of_left = 0.0,latent_learning = False, add_visual_cue_image = True, left_arm = True, right_arm = True, **kwargs):
+    def __init__(self, add_obstacles = False, add_visual_cue_object = False, intermediate_rewards = False,reward_left = True,
+                 probability_of_left = 0.0,latent_learning = False, add_visual_cue_image = False, left_arm = True, right_arm = True, **kwargs):
         
 
 
+        DEFAULT_PARAMS.set('forward_step',0.15*5, 0.12*5, 5*0.17)
+        DEFAULT_PARAMS.set("wall_tex", "picket_fence")
+
+        
+
+        
         self.latent_learning = latent_learning
         self.intermediate_rewards = intermediate_rewards
         self.add_obstacles = add_obstacles
@@ -30,14 +36,22 @@ class myTmaze(MiniWorldEnv, utils.EzPickle):
         self.right_arm = right_arm
         
 
+        
         if self.add_obstacles:
             self.num_obstacles = 3
-
-        MiniWorldEnv.__init__(self, max_episode_steps=1500, **kwargs)
+       
+        
+        MiniWorldEnv.__init__(self,**kwargs)
         utils.EzPickle.__init__(self, **kwargs)
-
+        
         self.action_space = spaces.Discrete(self.actions.move_forward + 1)
-
+        
+    def turn_agent(self, turn_angle):
+        turn_angle = 90
+        return super().turn_agent(turn_angle)
+    
+    
+    
     def _gen_world(self):
 
         min_z_room2 = -6.85 if self.left_arm else -1.37
@@ -50,8 +64,6 @@ class myTmaze(MiniWorldEnv, utils.EzPickle):
 
         if not self.latent_learning:
             self.box = Box(color="red")
-            self.box2 = Box(color="blue",size = 0.3)
-            self.box2_reward_taken = False #to stop the thing from taking the reward twice
 
             self.key = Key(color= 'red')
             self.found_key = False
@@ -59,8 +71,6 @@ class myTmaze(MiniWorldEnv, utils.EzPickle):
 
             if self.reward_left or self.np_random.uniform() < self.probability_of_left:
                 self.place_entity(self.box, room=room2, max_z=room2.min_z + 1)
-                self.place_entity(self.box2, room=room1, max_z=-0.11, min_z=-0.11, min_x=5.48,max_x=5.48)
-            
                 if self.add_visual_cue_object:
                     self.place_entity(ent = self.key, room = room2, min_z= -1.37 ,max_z=  -0.5)
                 self.reward_left = True
@@ -79,8 +89,8 @@ class myTmaze(MiniWorldEnv, utils.EzPickle):
                 
 
 
-        self.place_agent(dir=0, pos=[0.07, 0, 0])
-
+        #self.place_agent(room= room1, dir=self.np_random.uniform(-math.pi / 4, math.pi / 4))
+        self.place_agent(pos= [0.20,0,-0.90], dir= math.pi/2)
 
         pos_list = [[1.37*(2*x+1)-0.22, 1.37, -1.37] for x in range(3)] \
                 + [[1.37*(2*x+1)-0.22, 1.37, 1.37] for x in range(3)] \
@@ -110,10 +120,6 @@ class myTmaze(MiniWorldEnv, utils.EzPickle):
         if self.near(self.box):
             reward += self._reward()
             termination = True
-        if self.near(self.box2) and not self.box2_reward_taken:
-            reward += self._reward()* 0.5
-            self.entities.remove(self.box2)
-            self.box2_reward_taken = True
 
         if self.add_visual_cue_object and self.found_key == False and self.near(self.key):
            self.found_key = True 
@@ -146,7 +152,7 @@ def main():
     args = parser.parse_args()
     view_mode = "top" if args.top_view else "agent"
 
-    env = gym.make(args.env_name, view=view_mode, render_mode="human", add_obstacles = True)
+    env = gym.make(args.env_name, view=view_mode, render_mode="human")
     miniworld_version = miniworld.__version__
 
     print(f"Miniworld v{miniworld_version}, Env: {args.env_name}")
@@ -159,6 +165,6 @@ if __name__ == "__main__":
     # make sure register the environment before running
     gym.envs.register(
         id='MyTMaze-v0',
-        entry_point='custom_T_Maze_V0:myTmaze',
+        entry_point='custom_T_Maze_V0:MyTmaze',
     )
     main()
