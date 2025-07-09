@@ -1,0 +1,14 @@
+artifact_uri: file:C:/Users/matta/OneDrive/Documents/GitHub/-RL_Using_CLAPP/mlruns/536671207686667244/bce72847be1745c0b9ec70b04c4cb8bf/artifacts
+end_time: 1751984806322
+entry_point_name: ''
+experiment_id: '536671207686667244'
+lifecycle_stage: active
+run_id: bce72847be1745c0b9ec70b04c4cb8bf
+run_name: default_run
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1751984806021
+status: 3
+tags: []
+user_id: matta

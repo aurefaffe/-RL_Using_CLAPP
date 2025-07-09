@@ -29,15 +29,14 @@ class myTmaze(MiniWorldEnv, utils.EzPickle):
         self.left_arm = left_arm
         self.right_arm = right_arm
         
+
         if self.add_obstacles:
             self.num_obstacles = 3
-       
-        
-        MiniWorldEnv.__init__(self, max_episode_steps=280, **kwargs)
+
+        MiniWorldEnv.__init__(self, max_episode_steps=1500, **kwargs)
         utils.EzPickle.__init__(self, **kwargs)
-        
+
         self.action_space = spaces.Discrete(self.actions.move_forward + 1)
-        
 
     def _gen_world(self):
 
@@ -51,6 +50,8 @@ class myTmaze(MiniWorldEnv, utils.EzPickle):
 
         if not self.latent_learning:
             self.box = Box(color="red")
+            self.box2 = Box(color="blue",size = 0.3)
+            self.box2_reward_taken = False #to stop the thing from taking the reward twice
 
             self.key = Key(color= 'red')
             self.found_key = False
@@ -58,6 +59,8 @@ class myTmaze(MiniWorldEnv, utils.EzPickle):
 
             if self.reward_left or self.np_random.uniform() < self.probability_of_left:
                 self.place_entity(self.box, room=room2, max_z=room2.min_z + 1)
+                self.place_entity(self.box2, room=room1, max_z=-0.11, min_z=-0.11, min_x=5.48,max_x=5.48)
+            
                 if self.add_visual_cue_object:
                     self.place_entity(ent = self.key, room = room2, min_z= -1.37 ,max_z=  -0.5)
                 self.reward_left = True
@@ -76,7 +79,7 @@ class myTmaze(MiniWorldEnv, utils.EzPickle):
                 
 
 
-        self.place_agent(room= room1, dir=self.np_random.uniform(-math.pi / 4, math.pi / 4))
+        self.place_agent(dir=0, pos=[0.07, 0, 0])
 
 
         pos_list = [[1.37*(2*x+1)-0.22, 1.37, -1.37] for x in range(3)] \
@@ -107,6 +110,10 @@ class myTmaze(MiniWorldEnv, utils.EzPickle):
         if self.near(self.box):
             reward += self._reward()
             termination = True
+        if self.near(self.box2) and not self.box2_reward_taken:
+            reward += self._reward()* 0.5
+            self.entities.remove(self.box2)
+            self.box2_reward_taken = True
 
         if self.add_visual_cue_object and self.found_key == False and self.near(self.key):
            self.found_key = True 
@@ -155,4 +162,3 @@ if __name__ == "__main__":
         entry_point='custom_T_Maze_V0:myTmaze',
     )
     main()
-
