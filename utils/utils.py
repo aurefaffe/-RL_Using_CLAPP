@@ -7,10 +7,14 @@ import miniworld
 import os
 import numpy as np 
 import gymnasium as gym
+import random
+from collections import deque
+import torch.nn.functional as F
+import torch.nn as nn
+
 
 from mlflow import MlflowClient, MlflowException
 
-from utils.load_standalone_model import load_model
 
 
 
@@ -23,7 +27,7 @@ def parsing():
     parser.add_argument('--num_envs', type= int ,default= 8, help= 'the number of synchronous environment to spawn')
 
     #arguments for the training
-    parser.add_argument('--algorithm',default= 'actor_critic', help= 'type of RL algorithm to use')
+    parser.add_argument('--algorithm',default= 'PPO', help= 'type of RL algorithm to use')
     parser.add_argument('--encoder', default= "CLAPP", help="decide which encoder to use")
     parser.add_argument('--seed', default= 0, type= int, help= 'manual seed for training')
     parser.add_argument('--checkpoint_interval', default= 50, type= int, help= 'interval at which to save the model weights')
@@ -138,23 +142,231 @@ def get_wall_states(env, pos_list, direction_list, device):
     return states
 
 
-def collect_features(env, model_path, device, pos_list, direction_list, all_layers = False):
-    encoder = load_model(model_path= model_path).eval()
-    encoder.to(device)
+# def collect_features(env, model_path, device, pos_list, direction_list, all_layers = False):
+#     encoder = load_model(model_path= model_path).eval()
+#     encoder.to(device)
 
-    if device.type == 'mps':
-        encoder.compile(backend="aot_eager")
-    else:
-        encoder.compile()
+#     if device.type == 'mps':
+#         encoder.compile(backend="aot_eager")
+#     else:
+#         encoder.compile()
 
-    for param in encoder.parameters():
-        param.requires_grad = False
+#     for param in encoder.parameters():
+#         param.requires_grad = False
 
-    states = get_wall_states(env, pos_list, direction_list, device)
+#     states = get_wall_states(env, pos_list, direction_list, device)
     
-    features = encoder(states)
+#     features = encoder(states)
 
-    return features
+#     return features
+
+class Comparator(nn.Module):
+    def __init__(self, num_features, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.comparator = nn.Linear(num_features*2, 1)
+        self.sigmoid = nn.Sigmoid()
+        
+    def forward(self, x, tocompare):
+       combined = torch.cat((x, tocompare), dim=-1)
+       return torch.sigmoid(self.comparator(combined))
+    
+class MemoryBuffer:
+    def __init__(self, capacity = 10000, num_features=1024):
+        self.capacity = capacity
+        self.num_features = num_features
+        self.buffer = deque(maxlen=capacity)
+        self.features = deque(maxlen=capacity)
+        self.visits = {}
+
+    def add(self, obs, feature, similarity_threshold=0.9):
+        obs_key = self.getobservation_key(obs)
+        isnovel= True
+        
+        current_feat = feature.unsqueeze(0) if len(feature.shape) == 1 else feature
+        similarities = []
+        
+        for stored_feat in self.features:
+            stored_feat = stored_feat.unsqueeze(0) if len(stored_feat.shape) == 1 else stored_feat
+            # Simple cosine similarity
+            similarity = F.cosine_similarity(current_feat, stored_feat, dim=-1)
+            similarities.append(similarity.item())
+        
+        # If too similar to existing observations, don't add
+        if max(similarities) > similarity_threshold:
+            isnovel = False
+        if isnovel:
+            self.buffer.append(obs)
+            self.features.append(feature.detach())
+            self.visits[obs_key] = self.visits.get(obs_key, 0) + 1
+        return isnovel
+    
+    def getobservation_key(self, obs):
+        return hash(obs.detach().cpu().numpy().tobytes())
+    
+    def getvisits(self, obs):
+        obs_key = self.getobservation_key(obs)
+        return self.visits.get(obs_key, 0)
+    
+    def sample_batch(self, batch_size=32):
+        """Sample batch of observations for training"""
+        if len(self.buffer) < batch_size:
+            return None
+        
+        indices = random.sample(range(len(self.buffer)), batch_size)
+        batch_obs = [self.buffer[i] for i in indices]
+        batch_features = [self.features[i] for i in indices]
+        
+        return batch_obs, batch_features
+    
+class IntrinsicMotivationSystem:
+    """Complete intrinsic motivation system"""
+    def __init__(self, feature_dim=1024, memory_size=10000, 
+                 alpha=0.5, beta=0.5, device='cpu', encoder=None):
+        self.device = device
+        self.feature_dim = feature_dim
+        self.alpha = alpha  # Count-based reward coefficient
+        self.beta = beta    # Temporal distance reward coefficient
+        
+        # Networks
+        self.encoder =encoder.to(device)
+        self.comparator = Comparator(feature_dim).to(device)
+        
+        # Memory buffer
+        self.memory = MemoryBuffer(memory_size, feature_dim)
+        
+        # Training data for temporal comparator
+        self.training_buffer = deque(maxlen=50000)
+        
+        self.comparator_optimizer = torch.optim.Adam(self.comparator.parameters(), lr=1e-4)
+        
+        # Training parameters
+        self.temporal_threshold = 5  # k steps for positive examples
+        self.temporal_gap = 20       # M*k steps for negative examples
+        
+
+    
+    def compute_intrinsic_reward(self,obs, feats, episode_step):
+        """Compute intrinsic reward based on count-based and temporal distance"""
+
+        
+        # Count-based reward
+        count_reward = self._compute_count_based_reward(feats)
+        print(f"Count-based reward: {count_reward.item()}")
+        
+        # Temporal distance reward
+        temporal_reward = self._compute_temporal_distance_reward(feats)
+        print(f"Temporal distance reward: {temporal_reward.item()}")
+        
+        # Combined intrinsic reward
+        intrinsic_reward = self.alpha * count_reward + self.beta * temporal_reward
+        
+        # Add to memory if reward is high enough (novelty threshold)
+        novelty_threshold = 0.25
+        if intrinsic_reward > novelty_threshold:
+            self.memory.add(obs, feats)
+        
+        # Store for temporal comparator training
+        self._store_training_data(obs, feats, episode_step)
+        
+        return intrinsic_reward.item()
+    
+    def _compute_count_based_reward(self, features):
+        """Compute count-based intrinsic reward"""
+        
+        
+        # Find similar observations in memory
+        visit_count = 0
+        similarity_threshold = 0.5
+        
+        for stored_feat in self.memory.features:
+            stored_feat = stored_feat.unsqueeze(0) if len(stored_feat.shape) == 1 else stored_feat
+            similarity = F.cosine_similarity(features, stored_feat, dim=-1)
+            print(f"Similarity: {similarity.item()}")
+            
+            if similarity.item() > similarity_threshold:
+                visit_count += 10
+        
+        # Count-based reward: higher for less visited states
+        count_reward = self.alpha / (visit_count + 1) 
+        return torch.tensor(count_reward, device=self.device)
+    
+    def _compute_temporal_distance_reward(self, features):
+        """Compute temporal distance based reward"""
+        
+        
+        min_temporal_distance = 0.0
+        
+        for stored_feat in self.memory.features:
+            stored_feat = stored_feat.unsqueeze(0) if len(stored_feat.shape) == 1 else stored_feat
+            
+            # Use comparator to get temporal correlation
+            temporal_correlation = self.comparator(features, stored_feat)
+            
+            # Convert correlation to distance (1 - correlation)
+            temporal_distance = 1.0 - temporal_correlation
+            min_temporal_distance = min(min_temporal_distance, temporal_distance.item())
+        
+        # Reward proportional to minimum temporal distance
+        temporal_reward = self.beta * min_temporal_distance
+        return torch.tensor(temporal_reward, device=self.device)
+    
+    def _store_training_data(self, observation, features, episode_step):
+        """Store data for training temporal comparator"""
+        self.training_buffer.append((observation, features, episode_step))
+    
+    def train_temporal_comparator(self, batch_size=64):
+        """Train the temporal comparator network"""
+        if len(self.training_buffer) < batch_size*2:  # Changed > to <
+            return
+
+        # Sample training data
+        batch_data = random.sample(self.training_buffer, batch_size*2)  # Added batch_size parameter
+
+        positive_pairs = []
+        negative_pairs = []
+
+        for i in range(len(batch_data)):
+            for j in range(i + 1, len(batch_data)):
+                obs1, feat1, step1 = batch_data[i]
+                obs2, feat2, step2 = batch_data[j]
+                
+                step_diff = abs(step1 - step2)
+                
+                if step_diff <= self.temporal_threshold:
+                    # Positive pair (temporally close)
+                    positive_pairs.append((feat1, feat2, 1.0))
+                elif step_diff >= self.temporal_gap:
+                    # Negative pair (temporally distant)
+                    negative_pairs.append((feat1, feat2, 0.0))
+
+        # Balance positive and negative pairs
+        min_pairs = min(len(positive_pairs), len(negative_pairs))
+        if min_pairs == 0:
+            return
+
+        positive_pairs = random.sample(positive_pairs, min_pairs)
+        negative_pairs = random.sample(negative_pairs, min_pairs)
+
+        all_pairs = positive_pairs + negative_pairs
+        random.shuffle(all_pairs)
+
+        # Training loop
+        total_loss = 0
+        self.comparator_optimizer.zero_grad()
+
+        for feat1, feat2, label in all_pairs:
+            label = torch.tensor([label], device=self.device, dtype=torch.float32)  # Added dtype
+            
+            prediction = self.comparator(feat1, feat2)
+            prediction = prediction.squeeze(0)
+            print(f"Prediction: {prediction}, Label: {label}")
+            loss = F.binary_cross_entropy(prediction, label)
+            loss.backward()
+            total_loss += loss.item()
+
+        self.comparator_optimizer.step()
+
+        return total_loss / len(all_pairs)
 
 
 
