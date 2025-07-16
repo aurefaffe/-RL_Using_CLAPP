@@ -10,15 +10,17 @@ import os
 import gymnasium as gym
 from utils.utils import parsing, create_envs
 import numpy
+from torchvision.models import resnet50, ResNet50_Weights
 
 
 class TmazeDiscretizer:
-    def __init__(self, env, encoder=None):
+    def __init__(self, env, encoder=None, encoder_type='CLAPP'):
         self.env1 = self._unwrap_env(env)
         self.env = env
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.encoder = encoder
+        self.encoder = encoder.to(self.device) if encoder is not None else None
         self.featureslist = []
+        self.resize = encoder_type != 'CLAPP'
         
         # Positions discrétisées basées sur ton code
         self.discrete_positions = self._generate_discrete_positions()
@@ -29,20 +31,20 @@ class TmazeDiscretizer:
         
         # Corridor principal (room1) - murs du haut et du bas
         for x in range(3):
-            positions.append([1.37*(2*x+1)-0.22, 1.37, -1.37])  # Mur du bas
-            positions.append([1.37*(2*x+1)-0.22, 1.37, 1.37])   # Mur du haut
+            positions.append([1.37*(2*x+1),0, 0])  # Mur du bas
+            positions.append([1.37*(2*x+1), 0,0])   # Mur du haut
             
         # Bras gauche et droit (room2) - mur du fond
         for x in range(5):
-            positions.append([10.74, 1.37, 1.37*(2*x+1)-6.85])
+            positions.append([9.78,0, 1.37*(2*x+1)-6.85])
             
         # Jonction entre room1 et room2
         for x in [0, 1, 3, 4]:  # Exclut la position centrale (x=2)
-            positions.append([8, 1.37, 1.37*(2*x+1)-6.85])
+            positions.append([8.5, 0, 1.37*(2*x+1)-6.85])
             
         # Coins des bras
-        positions.append([9.37, 1.37, -6.85])  # Coin bras gauche
-        positions.append([9.37, 1.37, 6.85])   # Coin bras droit
+        positions.append([9.78, 0, -6.0])  # Coin bras gauche
+        positions.append([9.78, 0, 6.0])   # Coin bras droit
         
         return positions
     
@@ -74,9 +76,9 @@ class TmazeDiscretizer:
         """Extrait les caractéristiques de l'observation"""
         if self.encoder is not None:
             print(obs)
-            obs = obs[0]
-            obs_tensor = torch.tensor(obs, dtype=torch.float32).to(self.device)
-            obs_tensor = obs_tensor.reshape(obs_tensor.shape[2],1,obs_tensor.shape[1], obs_tensor.shape[0])
+            obs_tensor = torch.tensor(obs, dtype=torch.float32).to(self.device) 
+            if self.resize:
+                obs_tensor = obs_tensor.view(1, obs_tensor.shape[2], obs_tensor.shape[0], obs_tensor.shape[1])  # Reshape pour le modèle
             with torch.no_grad():
                 features = self.encoder(obs_tensor)
             return features.cpu().numpy()
@@ -93,21 +95,23 @@ class TmazeDiscretizer:
             positions = self.discrete_positions
         
         if orientations is None:
-            orientations = [0, 45, 90, 135, 180, 225, 270, 315]  # 8 orientations
+            orientations = [0, 90,  180, 270]  # 8 orientations
         
         self.featureslist = []
         position_orientation_pairs = []
-        
+        wsh = self.env1.reset()
         for pos_idx, pos in enumerate(positions):
             for orient in orientations:
                 # try:
                     # Reset et placer l'agent
-                    wsh = self.env1.reset()
                    
+                    wsh = self.env1.render_obs()
                     features = self.extract_features(wsh)
                     print(f"Position {pos_idx}, Orientation {orient}°: Features shape {features.shape}")
                     self.env1.agent.pos=pos
                     self.env1.agent.dir = orient 
+                    self.env1.render()
+                    
                     
                     features = features.flatten()
                     
@@ -182,7 +186,7 @@ class TmazeDiscretizer:
                     yticklabels=labels if len(labels) <= 50 else False,
                     cbar_kws={'label': 'Similarité cosinus'})
         
-        plt.title('Matrice de Similarité CLIP - T-maze Discrétisé')
+        plt.title('Matrice de Similarité cosinus - T-maze Discrétisé')
         plt.xlabel('Positions/Orientations')
         plt.ylabel('Positions/Orientations')
         
@@ -235,27 +239,76 @@ class TmazeDiscretizer:
         while hasattr(base_env, 'env'):
             base_env = base_env.env
         return base_env
+    
+    def render_suspicious_positions(self, suspicious_indices = None):
+        """
+        Affiche les positions et orientations suspectes
+        
+        Args:
+            positions: Liste des positions à afficher (par défaut self.discrete_positions)
+            orientations: Liste des orientations à afficher (par défaut [0, 90, 180, 270])
+        """
+        if suspicious_indices is None:
+            print("No suspicious indices provided.")
+            return
+
+        if not hasattr(self, 'position_orientation_pairs'):
+            print("No position_orientation_pairs found.")
+            return
+
+        for idx in suspicious_indices:
+            i, j = idx
+            # Render first suspicious position
+            pos_idx1, orient1 = self.position_orientation_pairs[i]
+            pos1 = self.discrete_positions[pos_idx1]
+            self.env1.agent.pos = pos1
+            self.env1.agent.dir = orient1
+            print(f"Rendering suspicious position {pos_idx1} with orientation {orient1} (index {i})")
+            self.env1.render()
+            # Render second suspicious position
+            pos_idx2, orient2 = self.position_orientation_pairs[j]
+            pos2 = self.discrete_positions[pos_idx2]
+            self.env1.agent.pos = pos2
+            self.env1.agent.dir = orient2
+            print(f"Rendering suspicious position {pos_idx2} with orientation {orient2} (index {j})")
+            self.env1.render()
+        
+def difference_matrix(matrix1, matrix2, threshold=1):
+    matrix = np.abs(matrix1 - matrix2)
+    below_threshold_indices = []
+    for i in range(matrix.shape[0]):
+        for j in range(matrix.shape[1]):
+            if matrix[i, j] > threshold:
+                below_threshold_indices.append((i, j))
+    print("Indices below threshold:", below_threshold_indices)
+    return matrix, below_threshold_indices
 
 if __name__ == '__main__':
     model_path = os.path.abspath('trained_models')
-    encoder = load_model(model_path=model_path)
+    encoder1 = load_model(model_path=model_path)
+    encoder2= resnet50(weights=ResNet50_Weights.IMAGENET1K_V2)
+    feature_dim = 1000
     gym.envs.register(
         id='MyTMaze-v0',
         entry_point='envs.T_maze.custom_T_Maze_V0:MyTmaze'
     )
     
-    envs =gym.make("MyTMaze")
-    envs = gym.wrappers.GrayscaleObservation(envs)
+    envs =gym.make("MyTMaze", render_mode='human')
+    # envs = gym.wrappers.GrayscaleObservation(envs)
    
     
     
     # Create discretizer
-    TmazeforMatrix = TmazeDiscretizer(env=envs, encoder=encoder)
+    TmazeforMatrix1 = TmazeDiscretizer(env=envs, encoder=encoder1)
+    TmazeforMatrix2 = TmazeDiscretizer(env=envs, encoder=encoder2, encoder_type='resnet')
     
     # Extract features and compute similarity
-    features = TmazeforMatrix.extract_features_from_all_positions()
-    matrice = TmazeforMatrix.compute_similarity_matrix(features=features)
-    
+    features1 = TmazeforMatrix1.extract_features_from_all_positions()
+    matrice1= TmazeforMatrix1.compute_similarity_matrix(features=features1)
+    features2 = TmazeforMatrix2.extract_features_from_all_positions()
+    matrice2= TmazeforMatrix2.compute_similarity_matrix(features=features2)
+    differencematrix, suspicious_indices = difference_matrix(matrice1, matrice2, threshold=1)
     # Visualize
-    TmazeforMatrix.visualize_similarity_matrix(similarity_matrix=matrice)
+    TmazeforMatrix1.visualize_similarity_matrix(similarity_matrix=differencematrix)
+    TmazeforMatrix1.render_suspicious_positions(suspicious_indices=suspicious_indices)
     

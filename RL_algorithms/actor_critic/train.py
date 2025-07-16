@@ -8,7 +8,7 @@ from tqdm import std
 import miniworld
 import gymnasium as gym
 
-from ..ac_agent import AC_Agent
+from ..ac_agent import AC_Agent, AC_Agent_With_Buffer
 from ..models import CriticModel
 
 from utils.utils import save_models
@@ -16,26 +16,45 @@ from utils.utils import save_models
 def train_actor_critic(opt, env, device, encoder, gamma, models_dict, target, action_dim, feature_dim, tau = 0.05):
 
     assert env.num_envs == 1
+
+
+    if opt.track_run:
+            mlflow.log_params(
+                {
+                    'actor_lr' : opt.actor_lr,
+                    'critic_lr' : opt.critic_lr,
+                }
+            )
+
     if opt.algorithm == "actor_critic_e":
         print("using eligibility traces")
         eligibility_traces = True
+        if opt.track_run:
+                mlflow.log_params(
+                    {
+                        't_delay_theta' : opt.t_delay_theta,
+                        't_delay_w' : opt.t_delay_w,
+                    }
+                )
     else:
         print("not using eligibility traces")
         eligibility_traces = False
     
-    agent = AC_Agent(feature_dim, action_dim,'LeakyReLU', encoder).to(device)
+    agent = AC_Agent(feature_dim, action_dim,None, encoder).to(device)
+    if opt.memory_buffer:
+        agent= AC_Agent_With_Buffer(feature_dim,action_dim,None, encoder).to(device)
 
     actor = agent.actor
     critic = agent.critic
 
     if target:
-        target_critic = CriticModel(feature_dim, 'LeakyReLU').to(device)
+        target_critic = CriticModel(feature_dim, None).to(device)
         target_critic.load_state_dict(critic.state_dict())
         models_dict['target'] = target_critic
 
     if not eligibility_traces:
-        actor_optimizer = torch.optim.AdamW(actor.parameters(), lr = opt.actor_lr)
-        critic_optimizer = torch.optim.AdamW(critic.parameters(),lr = opt.critic_lr)
+        optimizer = torch.optim.AdamW(agent.parameters(), lr = opt.lr)
+      
     else:
         z_theta = [torch.zeros_like(p, device= device) for p in actor.parameters()]
         z_w = [torch.zeros_like(p, device= device) for p in critic.parameters()]
@@ -48,15 +67,21 @@ def train_actor_critic(opt, env, device, encoder, gamma, models_dict, target, ac
 
     for epoch in tqdm.tqdm(range(opt.num_epochs)):
         
-        state, _ = env.reset(seed = opt.seed + epoch)
+        state, info = env.reset(seed = opt.seed + epoch)
+        # agent_pos = torch.tensor(info['agent_pos'], dtype= torch.float32,device= device).squeeze()
+        # agent_dir = torch.tensor(info['agent_dir'], dtype=torch.float32,device= device)
+
+
      
         state = torch.tensor(state, device= device, dtype= torch.float32)
         if opt.greyscale:
             state = torch.unsqueeze(state, dim= 1)
     
-        
+
         features = encoder(state, keep_patches = opt.keep_patches)
-        features = features.flatten().unsqueeze(0)
+        features = features.flatten()
+        
+
        
         done = False
         total_reward = 0
@@ -71,50 +96,68 @@ def train_actor_critic(opt, env, device, encoder, gamma, models_dict, target, ac
 
         while not done:
 
-            action, logprob = agent.get_action_and_log_prob_from_features(features)
+
+
+            action, logprob, dist = agent.get_action_and_log_prob_dist_from_features(features)
             value = agent.get_value_from_features(features)
 
-            n_state, reward, terminated, truncated, _ = env.step([action.detach().item()])
+            n_state, reward, terminated, truncated, info = env.step([action.detach().item()])
 
-            reward = reward[0]
+            # agent_pos = torch.tensor(info['agent_pos'], dtype= torch.float32,device= device).squeeze()
+            # agent_dir = torch.tensor(info['agent_dir'], dtype=torch.float32,device= device)
+
+            
+            
+
+            reward = reward[0]*10
             terminated = terminated[0]
             truncated = truncated[0]
-
+            
             n_state_t = torch.tensor(n_state, device= device, dtype= torch.float32)
 
             if opt.greyscale:
-                n_state_t = torch.unsqueeze(n_state_t, dim= 1)
+                n_state_t = torch.unsqueeze(n_state_t, dim=1)
            
-            features = agent.get_features(n_state_t).flatten().unsqueeze()
-           
-            if target:
-                new_value = target_critic(features).detach() 
-            else:
-                new_value = agent.get_value_from_features(features)
+            features = agent.get_features(n_state_t).squeeze(0)
 
-            delayed_value = reward + gamma * new_value
+            if opt.memory_buffer:
+                intrinsic_rewards=agent.compute_intrinsic_rewards(obs = n_state_t, feats=features, episodestep=step)/100
+            reward += intrinsic_rewards
+    
+            with torch.no_grad():
+                if target:
+                    new_value = target_critic(features).detach() 
+                else:
+                    new_value = agent.get_value_from_features(features)
 
-            advantage = delayed_value - value if not done or truncated else reward
-            
+                if done or truncated:
+                    delayed_value = reward
+                else:
+                    delayed_value = reward + gamma * new_value
+
+                advantage = delayed_value - value
+
             if opt.track_run:
-                mlflow.log_metric('values', value.detach().squeeze().item(),step= int(step.item()))
+                mlflow.log_metric('values', value.detach().item(),step= int(step.item()))
                 mlflow.log_metric('advantage', advantage.detach().item(),step= int(step.item()))
+            
 
             if not eligibility_traces:
-                tot_loss_critic, tot_loss_actor = update_a2c(value, delayed_value, critic_optimizer, 
-                                        advantage,logprob, actor_optimizer, tot_loss_critic, tot_loss_actor)
+
+                lc = loss_critic(value, delayed_value)
+                la = loss_actor(logprob, logprob, advantage, opt.actor_eps)
+                tot_loss = lc * opt.coeff_critic + la - dist.entropy() * opt.coeff_entropy
+
+                tot_loss_critic, tot_loss_actor = update_a2c(tot_loss, optimizer)
             
             else:
-                update_eligibility(z_w, z_theta, t_delay_w, t_delay_theta, gamma, I,
+                z_theta, z_w = update_eligibility(z_w, z_theta, t_delay_w, t_delay_theta, gamma, I,
                         value, advantage, logprob, critic, actor ,opt.critic_lr, opt.actor_lr)
-            I = gamma * I
+                I = gamma * I
 
             if target:
-                target_state_dict = target_critic.state_dict()
-                critic_state_dict = critic.state_dict()
-                for key in critic_state_dict:
-                    target_state_dict[key] = tau *critic_state_dict[key] + (1 - tau) * target_state_dict[key] 
-                target_critic.load_state_dict(target_state_dict)
+                update_target(target_critic, critic, tau)
+
             
             state = n_state_t
             total_reward += reward
@@ -131,9 +174,10 @@ def train_actor_critic(opt, env, device, encoder, gamma, models_dict, target, ac
                env.render() 
             
         current_rewards += total_reward  
-
-
+        if epoch%5 == 0 and opt.memory_buffer:
+            agent.train_temporal_comparator()
         if opt.track_run:
+
             mlflow.log_metrics(
                 {
                     'reward': total_reward,
@@ -143,46 +187,56 @@ def train_actor_critic(opt, env, device, encoder, gamma, models_dict, target, ac
                 },
                 step= epoch
             )
+            
 
 
+def update_target(target_critic, critic, tau):
+    target_state_dict = target_critic.state_dict()
+    critic_state_dict = critic.state_dict()
+    for key in critic_state_dict:
+        target_state_dict[key] = tau *critic_state_dict[key] + (1 - tau) * target_state_dict[key] 
+    target_critic.load_state_dict(target_state_dict)
 
 
+def loss_actor(log_prob_t, past_log_prob_t, advantage_t, epsilon_clipping):
 
+    log_ratio_probs_t  = log_prob_t - past_log_prob_t
+    ratio_probs_t = log_ratio_probs_t.exp()
 
+    clipped_ratio_probs_t = torch.clamp(ratio_probs_t, 1 - epsilon_clipping, 1 + epsilon_clipping)
+
+    loss = -torch.min(advantage_t * ratio_probs_t, advantage_t * clipped_ratio_probs_t)
+
+    return loss
      
-def update_a2c(value, delayed_value, critic_optimizer, advantage, logprob, actor_optimizer, tot_loss_critic, tot_loss_actor):
-    criterion_critic = nn.MSELoss()
-    loss_critic = criterion_critic(delayed_value,value)
-    critic_optimizer.zero_grad()
-    loss_critic.backward()
-    critic_optimizer.step()
-    tot_loss_critic += loss_critic.item()
+def loss_critic(value_t, delayed_value_t):
+    return 0.5 * (value_t - delayed_value_t) ** 2
 
-    loss_actor = -logprob*advantage.detach()
-    actor_optimizer.zero_grad()
-    loss_actor.backward()
+def update_a2c(tot_loss, optimizer):
+    optimizer.zero_grad()
+    tot_loss.backward()
+    optimizer.step()
+    
 
-    actor_optimizer.step()
-    tot_loss_actor += loss_actor.item()
-
-
-    return(tot_loss_critic, tot_loss_actor)
 
 def update_eligibility(z_w, z_theta, t_delay_w, t_delay_theta, gamma, I, value, advantage, logprob, critic, actor, lr_w, lr_theta):
-
+    
     grad_values = torch.autograd.grad(value, critic.parameters())
     grad_policy = torch.autograd.grad(logprob, actor.parameters())
     
     z_w = [gamma * t_delay_w * z + I * p for z, p in zip(z_w, grad_values)]
-    z_theta = [gamma * t_delay_theta * z + I * p for z, p in zip(z_theta, grad_policy)]
+    z_theta = [gamma * t_delay_theta * z +  I * p for z, p in zip(z_theta, grad_policy)]
 
     with torch.no_grad():
 
         for p, z in zip(critic.parameters(), z_w):
-            p  += lr_w * advantage.squeeze() * z
+            p.add_(lr_w * advantage.squeeze() * z)
+            
 
         for p, z in zip(actor.parameters(), z_theta):    
-            p  += lr_theta * advantage.squeeze() * z
+            p.add_(lr_theta * advantage.squeeze() * z)
+
+    return z_theta, z_w
     
         
         

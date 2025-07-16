@@ -6,13 +6,16 @@ import mlflow
 import numpy as np
 from tqdm import std
 
-from ..ac_agent import AC_Agent
+from ..ac_agent import AC_Agent, AC_Agent_With_Buffer
 from utils.utils import save_models
 def train_PPO(opt, envs, device, encoder, gamma, models_dict, action_dim, feature_dim):
 
     num_envs = opt.num_envs
     
     agent = AC_Agent(feature_dim, action_dim, 'LeakyReLU', encoder).to(device)
+    if opt.memory_buffer:
+        agent = AC_Agent_With_Buffer(feature_dim,action_dim,'LeakyReLU', encoder,device=device).to(device=device)
+    
 
     optimizer = torch.optim.AdamW(agent.parameters(), lr = opt.lr)
 
@@ -29,7 +32,7 @@ def train_PPO(opt, envs, device, encoder, gamma, models_dict, action_dim, featur
 
     is_next_observation_terminal_t = torch.zeros(num_envs, device= device)
 
-    count_num_steps_env = torch.zeros((num_envs,1), dtype= torch.float32, device= device)
+    count_num_steps_env = torch.zeros((1), dtype= torch.float32, device= device)
     nums_run = 0
 
     for epoch in tqdm.tqdm(range(opt.num_epochs)):
@@ -94,7 +97,7 @@ def collect_rollouts(opt, envs, device, agent, len_rollouts, feature_dim, action
 
             n_state, rewards, terminated, truncated, _ = envs.step(actions_t.cpu().numpy())
 
-            batch_rewards[step] = torch.as_tensor(rewards,dtype= torch.float32, device= device)
+            batch_rewards[step] = torch.as_tensor(rewards,dtype= torch.float32, device= device)*10
             
             is_next_observation_terminal = np.logical_or(terminated, truncated)
             is_next_observation_terminal_t = torch.as_tensor(is_next_observation_terminal, dtype= torch.float32, device= device)
@@ -112,6 +115,10 @@ def collect_rollouts(opt, envs, device, agent, len_rollouts, feature_dim, action
                 states_t = torch.unsqueeze(states_t, dim= 1)
             
             features_t = agent.get_features(states_t, keep_patches = opt.keep_patches)
+            if opt.memory_buffer:
+                intrinsic_rewards=agent.compute_intrinsic_rewards(states_t,features_t,count_num_steps_env)/100
+                batch_rewards[step] = batch_rewards[step] + torch.as_tensor(intrinsic_rewards, dtype=torch.float32, device=device)
+                print(f"Intrinsic rewards: {intrinsic_rewards}"  )
 
             if opt.render:
                 envs.render()
@@ -211,6 +218,9 @@ def update_agent(opt, num_updates, len_rollouts, num_envs, agent, agent_optimize
             tot_loss += loss
             tot_entropy += loss_entropy
 
+        if opt.memory_buffer:
+            agent.train_temporal_comparator()
+
         if opt.track_run:
 
             mlflow.log_metrics(
@@ -265,7 +275,7 @@ def compute_actor_loss(opt, log_probs_t, past_log_probs_t, advantages_t, epsilon
     log_ratio_probs_t  = log_probs_t - past_log_probs_t
     ratio_probs_t = log_ratio_probs_t.exp()
     opt.not_normalize_advantages
-    if not   opt.not_normalize_advantages:
+    if not opt.not_normalize_advantages:
         advantages_t = (advantages_t - advantages_t.mean()) / (advantages_t.std() + 1e-8)
 
     clipped_ratio_probs_t = torch.clamp(ratio_probs_t, 1 - epsilon_clipping, 1 + epsilon_clipping)

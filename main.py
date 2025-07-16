@@ -12,7 +12,7 @@ from RL_algorithms.actor_critic.train import train_actor_critic
 from RL_algorithms.PPO.train import train_PPO
 
 from utils.load_standalone_model import load_model
-from utils.utils import save_models, create_ml_flow_experiment, parsing, create_envs, launch_experiment, collect_features
+from utils.utils import save_models, create_ml_flow_experiment, parsing, create_envs, launch_experiment
 
 import torch
 import torch.nn.functional as F
@@ -38,14 +38,16 @@ def train(opt, envs, model_path, device, models_dict):
         encoder = resnet50(weights=ResNet50_Weights.IMAGENET1K_V2)
         feature_dim = 1000
     else:
+        encoder = None
+        feature_dim = 4
         print('no available encoder matched the argument')
-        return
-    
-    encoder.to(device)
-    encoder.compile(backend="aot_eager")
+        
+    if encoder is not None:
+        encoder.to(device)
+        encoder.compile(backend="aot_eager")
 
-    for param in encoder.parameters():
-        param.requires_grad = False
+        for param in encoder.parameters():
+            param.requires_grad = False
     
     action_dim = envs.single_action_space.n
 

@@ -25,23 +25,30 @@ class AC_Agent(nn.Module):
         return self.actor(features)
     
     def get_value_from_state(self, state):
+        if self.encoder is None:
+            return self.get_value_from_features(state)
         return self.get_value_from_features(self.get_features(state))
     
     def get_probabilities_from_state(self, state):
+        if self.encoder is None:
+            self.get_probabilities_from_features(state)
         return self.get_probabilities_from_features(self.get_features(state))
     
 
     def get_action_and_log_prob_from_features(self, features):
         probs = self.get_probabilities_from_features(features)
-        dist = torch.distributions.Categorical(probs= probs)
+        probs = torch.clamp(probs, min=1e-8, max=1.0 - 1e-8)
+        dist = torch.distributions.Categorical(probs=probs)
         action = dist.sample()
         return action, dist.log_prob(action)
+       
     
     def get_log_probs_entropy_from_features(self, features, action):
         probs = self.get_probabilities_from_features(features)
         dist = torch.distributions.Categorical(probs= probs)
 
         return dist.log_prob(action), dist.entropy()
+    
 
 
     
