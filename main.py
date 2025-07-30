@@ -27,17 +27,19 @@ def train(opt, envs, model_path, device, models_dict):
         assert not opt.greyscale
         feature_dim = 1000
     else:
+        encoder = None
+        feature_dim=4800
         print('no available encoder matched the argument')
-        return
+        
     
+    if encoder is not None:
+        encoder = encoder.to(device)
+        encoder.compile(backend="aot_eager")
 
-    encoder = encoder.to(device)
-    encoder.compile(backend="aot_eager")
+    if encoder is not None:
+        for param in encoder.parameters():
+            param.requires_grad = False
 
-    
-    for param in encoder.parameters():
-        param.requires_grad = False
-    
     action_dim = envs.single_action_space.n
     feature_dim = feature_dim * opt.nb_stacked_frames
 
@@ -54,7 +56,6 @@ def train(opt, envs, model_path, device, models_dict):
                     'gamma': gamma,
                     'keep_patches' : opt.keep_patches, 
                     'seed' : opt.seed,
-                    'visible_reward' : opt.visible_reward,
                     'normalize_features' : opt.normalize_features             
                 }
         )

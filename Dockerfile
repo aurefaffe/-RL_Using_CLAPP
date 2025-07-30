@@ -22,6 +22,7 @@ RUN apt-get update && apt-get install -y \
     libgl1-mesa-glx \
     mesa-utils \
     xvfb \
+    nano \
     && rm -rf /var/lib/apt/lists/*
 
 
@@ -49,8 +50,8 @@ COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 #install own Miniworld
-COPY ./Miniworld /app/Miniworld
-WORKDIR /app/Miniworld
+COPY ./Miniworld /Miniworld
+WORKDIR /Miniworld
 RUN pip install -e .
 WORKDIR /home/${LDAP_USERNAME}
 # Copy your code inside the container

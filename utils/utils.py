@@ -19,7 +19,6 @@ def parsing():
     parser.add_argument('--greyscale', action= 'store_true', help = 'determine if we keep render the state in greyscale')
     parser.add_argument('--render', action= 'store_true', help= 'will render the maze')
     parser.add_argument('--num_envs', type= int ,default= 8, help= 'the number of synchronous environment to spawn')
-    parser.add_argument('--visible_reward', action= 'store_true', help= 'If the reward is a visible red box or not')
     parser.add_argument('--max_episode_steps', default= 1000, help= 'max number of steps per environment')
     #arguments for the training
     parser.add_argument('--algorithm',default= 'actor_critic', help= 'type of RL algorithm to use')
@@ -41,6 +40,8 @@ def parsing():
     parser.add_argument('--PCA', action='store_true', help= 'use PCA for ICM')
     parser.add_argument('--lr_scheduler', action= 'store_true', help= 'add a lr scheduler')
     parser.add_argument('--normalize_features', action= 'store_true', help='normalize the features from the encoder')
+    parser.add_argument('--memory_buffer', action= 'store_true', help="use memory buffer")
+    parser.add_argument('--spatial', action='store_true', help="jvais")
 
     parser.add_argument('--schedule_type_critic', default='linear', help='schedule type for the critic learning rate')
     parser.add_argument('--critic_lr_i', type=float, default=1e-4, help='initial learning rate for the critic')
@@ -65,6 +66,7 @@ def parsing():
     parser.add_argument('--t_delay_w_e', type=float, default=0.75, help='end delay for critic in case of eligibility trace')
     parser.add_argument('--w_l_m', type=float, default=0.9, help='max critic eligibility trace delay (for warmup jobs)')
     parser.add_argument('--w_l_len_w', type=int, default=10, help='warmup length for critic eligibility trace delay')
+    parser.add_argument('--images', action='store_true', help="with images or without them bitches")
 
     parser.add_argument('--len_rollout', default= 1024, type= int, help= 'length of the continuous rollout')
     parser.add_argument('--num_updates', default= 8, type= int, help= 'number of steps for the optimizer')
@@ -93,7 +95,7 @@ def create_envs(args, num_envs):
     )
     
     envs =gym.make_vec("MyTMaze", num_envs= num_envs,  
-                       max_episode_steps= args.max_episode_steps, render_mode = 'human' if args.render else None, visible_reward = args.visible_reward)
+                       max_episode_steps= args.max_episode_steps, render_mode = 'human' if args.render else None)
 
     if args.greyscale:
         envs = gym.wrappers.vector.GrayscaleObservation(envs)

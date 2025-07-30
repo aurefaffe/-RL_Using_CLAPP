@@ -6,7 +6,7 @@ import numpy as np
 from tqdm import std
 import gymnasium as gym
 
-from ..ac_agent import AC_Agent
+from ..ac_agent import AC_Agent, AC_Agent_With_Buffer, AC_Agent_With_Spatial_Representations
 from ..models import CriticModel
 from ..exploration_modules import ICM, update_ICM_predictor
 
@@ -23,6 +23,8 @@ def train_actor_critic(opt, env, device, encoder, gamma, models_dict, target, ac
         eligibility_traces = False
     if opt.track_run:
         log_params(opt)
+    if opt.spatial:
+        feature_dim=1288
     
     agent, optimizer, icm, icm_optimizer, target_critic, schedulders = createModules(opt, feature_dim, action_dim, encoder, 
                                                                        eligibility_traces, device, pca_module, target, models_dict, gamma)
@@ -42,6 +44,7 @@ def train_actor_critic(opt, env, device, encoder, gamma, models_dict, target, ac
         length_episode = 0
         tot_loss_critic = 0
         tot_loss_actor = 0
+        total_intrinsic=0
 
         if eligibility_traces:
             optimizer.reset_zw_ztheta()
@@ -49,6 +52,7 @@ def train_actor_critic(opt, env, device, encoder, gamma, models_dict, target, ac
         while not done:   
             action, logprob, dist = agent.get_action_and_log_prob_dist_from_features(memory.get_all_content_as_tensor())
             value = agent.get_value_from_features(memory.get_all_content_as_tensor())
+            entropy_dist = dist.entropy()
             
             for _ in range(opt.frame_skip):
                 n_state, reward, terminated, truncated, info = env.step([action.detach().item()])
@@ -69,6 +73,12 @@ def train_actor_critic(opt, env, device, encoder, gamma, models_dict, target, ac
                 reward += opt.alpha_intrinsic_reward * update_ICM_predictor(predicted, features, icm_optimizer, icm.encoder_model, device)
                 for _ in range(opt.num_updates_ICM - 1):
                     update_ICM_predictor(icm(old_features,features,action)[0], features, icm_optimizer, icm.encoder_model, device)
+            if opt.memory_buffer:
+                n_state_t = torch.tensor(n_state, device= device, dtype= torch.float32)
+                intrinsic_rewards=agent.compute_intrinsic_rewards(obs = n_state_t, feats=features)
+                reward*=10
+                reward += intrinsic_rewards
+                total_intrinsic+=intrinsic_rewards
               
             advantage, delayed_value = advantage_function(reward, value, terminated, truncated, agent, memory, target, target_critic, gamma)
             
@@ -78,7 +88,7 @@ def train_actor_critic(opt, env, device, encoder, gamma, models_dict, target, ac
                 tot_loss = lc * opt.coeff_critic + la - dist.entropy() * opt.coeff_entropy
                 tot_loss_critic, tot_loss_actor = update_a2c(tot_loss, optimizer)
             else:
-                update_eligibility(value, advantage, logprob, optimizer)
+                update_eligibility(value, advantage, logprob, entropy_dist, optimizer)
             
             if target:
                 update_target(target_critic, agent.critic, tau)  
@@ -106,6 +116,10 @@ def train_actor_critic(opt, env, device, encoder, gamma, models_dict, target, ac
                 },
                 step= epoch
             )
+            if opt.memory_buffer:
+                mlflow.log_metrics({
+                    'intrinsic': total_intrinsic},step=epoch)
+        
             
 def update_target(target_critic, critic, tau):
     target_state_dict = target_critic.state_dict()
@@ -145,10 +159,11 @@ def update_a2c(tot_loss, optimizer):
     tot_loss.backward()
     optimizer.step()
 
-def update_eligibility(value, advantage, logprob, optimizer):
+
+def update_eligibility(value, advantage, logprob, entropy_dist, optimizer):
     optimizer.zero_grad()
     value.backward()
-    logprob.backward()
+    logprob.backward(retain_graph = True)
     with torch.no_grad():
         optimizer.step(advantage)
         
@@ -199,6 +214,11 @@ def log_params(opt):
 
 def createModules(opt, feature_dim, action_dim, encoder, eligibility_traces, device, pca_module, target, models_dict, gamma):
     agent = AC_Agent(feature_dim, action_dim,None, encoder, opt.normalize_features).to(device)
+    if opt.memory_buffer:
+        agent = AC_Agent_With_Buffer(feature_dim, action_dim,None, encoder, opt.normalize_features).to(device)
+    if opt.spatial:
+        agent = AC_Agent_With_Spatial_Representations(1024, action_dim,None, encoder, opt.normalize_features).to(device)
+
     actor = agent.actor
     critic = agent.critic
     
@@ -210,6 +230,7 @@ def createModules(opt, feature_dim, action_dim, encoder, eligibility_traces, dev
 
     target_critic = None
     if target:
+        
         target_critic = CriticModel(feature_dim, None).to(device)
         target_critic.load_state_dict(critic.state_dict())
         models_dict['target'] = target_critic
@@ -247,6 +268,8 @@ def get_features_from_state(opt,n_state, agent, device):
     n_state_t = torch.tensor(n_state, device= device, dtype= torch.float32)
     if opt.greyscale:
         n_state_t = torch.unsqueeze(n_state_t, dim= 1)
+    elif agent.encoder is None:
+        n_state_t.squeeze(0)
     else:
         n_state_t = n_state_t.reshape(n_state_t.shape[0], n_state_t.shape[3], n_state_t.shape[1], n_state_t.shape[2])
     features = agent.get_features(n_state_t).flatten()

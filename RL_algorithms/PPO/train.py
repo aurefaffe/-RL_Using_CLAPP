@@ -6,7 +6,7 @@ import mlflow
 import numpy as np
 from tqdm import std
 
-from ..ac_agent import AC_Agent
+from ..ac_agent import AC_Agent, AC_Agent_With_Buffer
 from utils.utils import save_models
 def train_PPO(opt, envs, device, encoder, gamma, models_dict, action_dim, feature_dim):
 
@@ -33,6 +33,8 @@ def train_PPO(opt, envs, device, encoder, gamma, models_dict, action_dim, featur
     num_envs = opt.num_envs
     
     agent = AC_Agent(feature_dim, action_dim, None, encoder).to(device)
+    if opt.memory_buffer:
+        agent = AC_Agent_With_Buffer(feature_dim,action_dim,None, encoder).to(device)
 
     optimizer = torch.optim.AdamW(agent.parameters(), lr = opt.lr)
 
@@ -117,6 +119,9 @@ def collect_rollouts(opt, envs, device, agent, len_rollouts, feature_dim, action
             n_state, rewards, terminated, truncated, _ = envs.step(actions_t.cpu().numpy())
 
             batch_rewards[step] = torch.as_tensor(rewards,dtype= torch.float32, device= device)
+            if opt.memory_buffer:
+                intrinsic_rewards=agent.compute_intrinsic_rewards(states_t,features_t)
+                batch_rewards[step] = batch_rewards[step]*10 + torch.as_tensor(intrinsic_rewards, dtype=torch.float32, device=device)
             
             is_next_observation_terminal = np.logical_or(terminated, truncated)
             is_next_observation_terminal_t = torch.as_tensor(is_next_observation_terminal, dtype= torch.float32, device= device)

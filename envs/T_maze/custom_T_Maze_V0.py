@@ -2,7 +2,9 @@ import math
 import argparse
 import numpy as np
 import pyglet
+pyglet.options['shadow_window'] = False
 pyglet.options['headless'] = True
+
 import miniworld
 from miniworld.miniworld import MiniWorldEnv
 from miniworld.entity import Box, ImageFrame, MeshEnt, Key
@@ -14,11 +16,11 @@ from gymnasium import utils, spaces
 import gymnasium as gym
 
 class MyTmaze(MiniWorldEnv, utils.EzPickle):
-    
-    def __init__(self, visible_reward = True, add_obstacles = False, add_visual_cue_object = False, intermediate_rewards = False,reward_left = True,
-                 probability_of_left = 0.5,latent_learning = False, add_visual_cue_image = False, left_arm = True, right_arm = True, **kwargs):
-    
-        self.visible_reward = visible_reward    
+
+    def __init__(self, add_obstacles = False, add_visual_cue_object = False, intermediate_rewards = False,reward_left = True,
+                 probability_of_left = 0.5,latent_learning = False, add_visual_cue_image = False, left_arm = True, right_arm = True,no_image=False, **kwargs):
+
+
         self.latent_learning = latent_learning
         self.intermediate_rewards = intermediate_rewards
         self.add_obstacles = add_obstacles
@@ -28,26 +30,25 @@ class MyTmaze(MiniWorldEnv, utils.EzPickle):
         self.probability_of_left = probability_of_left
         self.left_arm = left_arm
         self.right_arm = right_arm
-
-      
-        
+        self.no_image=True
         if self.add_obstacles:
             self.num_obstacles = 3
-       
-        
+
         MiniWorldEnv.__init__(self, **kwargs)
         utils.EzPickle.__init__(self, **kwargs)
 
         self.action_space = spaces.Discrete(self.actions.move_forward + 1)
-        
-    
+
+    def turn_agent(self, turn_angle):
+        turn_angle *= 3
+        return super().turn_agent(turn_angle)
+
     def move_agent(self, fwd_dist, fwd_drift):
-        
-        fwd_dist = 3 * 0.15 
-       
+        self.max_forward_step = 3 * 0.15
+        fwd_dist = 3 * 0.15
         return super().move_agent(fwd_dist, fwd_drift)
 
-    
+
     def _gen_world(self):
 
         min_z_room2 = -6.85 if self.left_arm else -1.37
@@ -56,15 +57,10 @@ class MyTmaze(MiniWorldEnv, utils.EzPickle):
         room1 = self.add_rect_room(min_x=-0.22, max_x=8, min_z=-1.37, max_z=1.37, wall_tex="picket_fence",)
         room2 = self.add_rect_room(min_x=8, max_x=10.74, min_z= min_z_room2, max_z= max_z_room2, wall_tex="picket_fence")
 
-        
-
         self.connect_rooms(room_a= room1, room_b= room2, min_z= -1.37, max_z= 1.37)
 
-        self.box = Box(color='red')
-
-        self.box.pos = [9.2,0, - 6.7]
-        if not self.latent_learning and self.visible_reward:
-
+        if not self.latent_learning:
+            self.box = Box(color='red')
 
             self.key = Key(color= 'red')
             self.found_key = False
@@ -75,29 +71,30 @@ class MyTmaze(MiniWorldEnv, utils.EzPickle):
                 if self.add_visual_cue_object:
                     self.place_entity(ent = self.key, room = room2, min_z= -1.37 ,max_z=  -0.5)
                 self.reward_left = True
-            
+
             else:
                 self.place_entity(self.box, room=room2, min_z= room2.max_z - 1)
                 if self.add_visual_cue_object:
                     self.place_entity(ent = self.key, room = room2, min_z= 0.5, max_z= 1.37)
-        
+
 
         if self.add_obstacles:
             for i in range(self.num_obstacles):
                 self.place_entity(
                     ent = MeshEnt(mesh_name= 'barrel.obj',height= 1)
                     )
-                
+
+
         self.agent.radius = 0.25
         self.place_agent(room= room1,dir=self.np_random.uniform(-math.pi / 4, math.pi / 4))
-        
 
+        
         pos_list = [[1.37*(2*x+1)-0.22, 1.37, -1.37] for x in range(3)] \
                 + [[1.37*(2*x+1)-0.22, 1.37, 1.37] for x in range(3)] \
                 + [[10.74, 1.37, 1.37*(2*x+1)-6.85] for x in range(5)] \
                 + [[8, 1.37, 1.37*(2*x+1)-6.85] for x in [0, 1, 3, 4]] \
                 + [[9.37, 1.37, -6.85], [9.37, 1.37, 6.85]]
-        
+
         dir_list = [-math.pi / 2 for _ in range(3)] \
                 + [math.pi / 2 for _ in range(3)] \
                 + [-math.pi for _ in range(5)] \
@@ -105,25 +102,16 @@ class MyTmaze(MiniWorldEnv, utils.EzPickle):
                 + [-math.pi / 2 , math.pi / 2]
         
         # append images to proper positions with desried direction
-        for i, (pos_, dir_) in enumerate(zip(pos_list, dir_list)):
-            self.entities.append(
-                ImageFrame(
-                    pos=pos_, dir=dir_, width=2.74, tex_name="stl{}".format(i )
+        if self.no_image:
+            for i, (pos_, dir_) in enumerate(zip(pos_list, dir_list)):
+                self.entities.append(
+                    ImageFrame(
+                        pos=pos_, dir=dir_, width=2.74, tex_name="stl{}".format(i )
+                    )
+
                 )
 
-            )
 
-    def reset(self, *, seed = None, options = None):
-        obs, info = super().reset(seed=seed, options=options)
-        info["goal_pos"] = self.box.pos
-        info['agent_pos'] = (self.agent.pos - [5.26,0  ,0 ])/[10.96,13.7 ,1]
-        info['agent_dir'] = self.agent.dir/360
-
-        return obs, info
-        
-            
-    def _reward(self):
-        return 1.0 - (self.step_count / self.max_episode_steps)
 
     def step(self, action):
         obs, reward, termination, truncation, info = super().step(action)
@@ -133,16 +121,15 @@ class MyTmaze(MiniWorldEnv, utils.EzPickle):
             termination = True
 
         if self.add_visual_cue_object and self.found_key == False and self.near(self.key):
-           self.found_key = True 
+           self.found_key = True
            if self.intermediate_rewards:
                reward += self._reward()
            self.entities.remove(self.key)
 
         info["goal_pos"] = self.box.pos
-        info['agent_pos'] = (self.agent.pos - [5.26,0  ,0 ])/[10.96,13.7 ,1]
-        info['agent_dir'] = (self.agent.dir % (math.pi * 2))/(math.pi * 2)
+
         return obs, reward, termination, truncation, info
-    
+
 
 
 
@@ -164,7 +151,7 @@ def main():
     args = parser.parse_args()
     view_mode = "top" if args.top_view else "agent"
 
-    env = gym.make(args.env_name, view=view_mode, render_mode="human", visible_reward = False)
+    env = gym.make(args.env_name, view=view_mode, render_mode="human")
     miniworld_version = miniworld.__version__
 
     print(f"Miniworld v{miniworld_version}, Env: {args.env_name}")
