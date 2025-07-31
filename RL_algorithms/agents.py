@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 
 from .models import ActorModel, CriticModel
+from ..spatial_representations.models import Spatial_Model 
 
 
 class AC_Agent(nn.Module):
@@ -63,6 +64,32 @@ class AC_Agent(nn.Module):
 class A_Agent(AC_Agent):
     def __init__(self, num_features, num_action, activation, encoder, normalize_features=False, *args, **kwargs):
         super().__init__(num_features, num_action, activation, encoder, normalize_features, False, *args, **kwargs)
+
+class Agent_Spatial_Rep(AC_Agent):
+    def __init__(self, num_features, num_action, activation, encoder, spatial_model, put_spatial = False, put_only_spatial =False,normalize_features=False, *args, **kwargs):
+        if put_spatial:
+            num_features+=3
+        if put_only_spatial:
+            num_features=3
+        super().__init__(num_features, num_action, activation, encoder, normalize_features, False, *args, **kwargs)
+        self.spatial_model = spatial_model
+        self.put_spatial = put_spatial
+        self.put_only_spatial=put_only_spatial
+    
+    def get_value_from_features(self, features):
+        if self.put_spatial:
+            features = torch.cat((features, self.spatial_model(features)))
+        if self.put_only_spatial:
+            features = self.spatial_model(features)
+        return self.critic(features)
+    
+    def get_probabilities_from_features(self, features):
+        if self.put_spatial:
+            features = torch.cat((features, self.spatial_model(features)))
+        if self.put_only_spatial:
+            features = self.spatial_model(features)
+        return self.actor(features)
+    
 
 
     
