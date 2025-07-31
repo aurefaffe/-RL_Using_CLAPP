@@ -27,6 +27,7 @@ class AC_Agent(nn.Module):
                     x = self.normalization(x)
         else :
             x = state
+            print(state.shape)
             print(x)
         return x
     
@@ -45,7 +46,7 @@ class AC_Agent(nn.Module):
 
     def get_action_and_log_prob_from_features(self, features):
         if self.encoder is None:
-            features=features.unsqueeze(-1)
+            features=features.squeeze().squeeze().squeeze()
         probs = self.get_probabilities_from_features(features)
         dist = torch.distributions.Categorical(probs= probs)
         action = dist.sample()
@@ -53,7 +54,7 @@ class AC_Agent(nn.Module):
     
     def get_log_probs_entropy_from_features(self, features, action):
         if self.encoder is None:
-            features=features.squeeze(-1)
+            features=features.squeeze().squeeze().squeeze()
         probs = self.get_probabilities_from_features(features)
         dist = torch.distributions.Categorical(probs= probs)
 
@@ -61,7 +62,7 @@ class AC_Agent(nn.Module):
     
     def get_action_and_log_prob_dist_from_features(self, features):
         if self.encoder is None:
-            features=features.squeeze(-1)
+            features=features.squeeze().squeeze().squeeze()
         probs = self.get_probabilities_from_features(features)
         dist = torch.distributions.Categorical(probs= probs)
         action = dist.sample()

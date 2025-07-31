@@ -163,7 +163,7 @@ def update_a2c(tot_loss, optimizer):
 def update_eligibility(value, advantage, logprob, entropy_dist, optimizer):
     optimizer.zero_grad()
     value.backward()
-    logprob.backward(retain_graph = True)
+    logprob.backward()
     with torch.no_grad():
         optimizer.step(advantage)
         
@@ -269,7 +269,7 @@ def get_features_from_state(opt,n_state, agent, device):
     if opt.greyscale:
         n_state_t = torch.unsqueeze(n_state_t, dim= 1)
     elif agent.encoder is None:
-        n_state_t.squeeze(0)
+        n_state_t.squeeze().squeeze().squeeze()
     else:
         n_state_t = n_state_t.reshape(n_state_t.shape[0], n_state_t.shape[3], n_state_t.shape[1], n_state_t.shape[2])
     features = agent.get_features(n_state_t).flatten()

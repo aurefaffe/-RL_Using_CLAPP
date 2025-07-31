@@ -30,7 +30,7 @@ class MyTmaze(MiniWorldEnv, utils.EzPickle):
         self.probability_of_left = probability_of_left
         self.left_arm = left_arm
         self.right_arm = right_arm
-        self.no_image=True
+        self.no_image=False
         if self.add_obstacles:
             self.num_obstacles = 3
 
@@ -104,12 +104,13 @@ class MyTmaze(MiniWorldEnv, utils.EzPickle):
         # append images to proper positions with desried direction
         if self.no_image:
             for i, (pos_, dir_) in enumerate(zip(pos_list, dir_list)):
-                self.entities.append(
-                    ImageFrame(
-                        pos=pos_, dir=dir_, width=2.74, tex_name="stl{}".format(i )
-                    )
+                if i %3 == 0 :
+                    self.entities.append(
+                        ImageFrame(
+                            pos=pos_, dir=dir_, width=2.74, tex_name="stl{}".format(i )
+                        )
 
-                )
+                    )
 
 
 

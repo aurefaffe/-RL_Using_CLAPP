@@ -28,7 +28,7 @@ def train(opt, envs, model_path, device, models_dict):
         feature_dim = 1000
     else:
         encoder = None
-        feature_dim=4800
+        feature_dim=14400
         print('no available encoder matched the argument')
         
     
