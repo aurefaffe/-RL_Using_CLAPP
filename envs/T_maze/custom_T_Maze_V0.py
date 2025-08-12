@@ -103,6 +103,7 @@ class MyTmaze(MiniWorldEnv, utils.EzPickle):
                 + [0 for _ in range(4)] \
                 + [-math.pi / 2 , math.pi / 2]
         
+        
         # append images to proper positions with desried direction
         if self.remove_images:
             self.entities.append(ImageFrame(pos = pos_list[-2], dir = dir_list[-2], width=2.74, tex_name="stl{}".format(len(pos_list) -2)))

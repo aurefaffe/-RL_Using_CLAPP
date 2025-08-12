@@ -114,10 +114,21 @@ def parsing():
     return parser.parse_args()
     
 def create_envs(args, num_envs, reward = True):
-    gym.envs.register(
+    if args.environment == 'T_maze/custom_T_Maze_V0.py':
+     gym.envs.register(
         id='MyTMaze-v0',
         entry_point='envs.T_maze.custom_T_Maze_V0:MyTmaze'
     )
+    elif args.environment == 'T_maze/custom_Four_Maze_V0.py':
+        gym.envs.register(
+            id='MyMaze-v0',
+            entry_point='envs.T_maze.custom_Four_Maze_V0:FourRoomsMaze',
+        )
+    elif args.environment == 'T_maze/custom_Maze_V0.py':
+        gym.envs.register(
+            id='MyMaze-v0',
+            entry_point='envs.T_maze.custom_Maze_V0:Maze',
+        )
     
     envs =gym.make_vec("MyTMaze", num_envs= num_envs,  
                        max_episode_steps= args.max_episode_steps, render_mode = 'human' if args.render else None, visible_reward = args.visible_reward, reward = reward)
