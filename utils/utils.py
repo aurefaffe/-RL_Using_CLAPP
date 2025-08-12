@@ -38,7 +38,7 @@ def parsing():
     parser.add_argument('--nb_stacked_frames', default= 1, type= int, help= 'number of stacked frames given as input')
     parser.add_argument('--frame_skip', default= 1, type= int, help= 'number of frames to skip')
     parser.add_argument('--use_ICM', action= 'store_true', help= 'wether to use intrisic curiosity module or not')
-    parser.add_argument('--use_encoder_predictive', action='store_true', help='wether to use the predictive encoder')
+    parser.add_argument('--encoder_layer', default='none', help='which encoder to use')
     parser.add_argument('--encoder_lr', default= 1e-4, type= float, help= 'learning rate for the models of the ICM')
     parser.add_argument('--encoder_latent_dim', default= 128, type= int, help= 'latent dimension for ICM')
     parser.add_argument('--alpha_intrinsic_reward', default= 1e-1, type= float, help= 'intrisic reward coefficient')
@@ -131,7 +131,7 @@ def create_envs(args, num_envs, reward = True):
         )
     
     envs =gym.make_vec("MyTMaze", num_envs= num_envs,  
-                       max_episode_steps= args.max_episode_steps, render_mode = 'human' if args.render else None, visible_reward = args.visible_reward, reward = reward)
+                       max_episode_steps= args.max_episode_steps, render_mode = 'human' if args.render else None, visible_reward = args.visible_reward, reward = reward, remove_images = args.no_images)
 
     if args.greyscale:
         envs = gym.wrappers.vector.GrayscaleObservation(envs)

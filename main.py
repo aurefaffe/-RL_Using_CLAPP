@@ -1,6 +1,5 @@
 import os
 
-#from RL_algorithms.actor_critic.train import train_actor_critic
 from RL_algorithms.PPO.train import train_PPO
 from RL_algorithms.trainer import Trainer
 from RL_algorithms.models import Encoder_Model
@@ -11,7 +10,7 @@ import torch
 import torch.nn.functional as F
 import torch.nn as nn
 from torchvision.models import resnet50, ResNet50_Weights
-
+from utils.visualize_policy import visualize_policy
 import numpy as np
 import mlflow
 
@@ -27,10 +26,12 @@ def train(opt, envs, model_path, device, models_dict):
         if opt.keep_patches:
             feature_dim = 15 * 1024
     elif opt.encoder.startswith('resnet'):
+        transform = ResNet50_Weights.IMAGENET1K_V2.transforms()
         model_res = resnet50(weights=ResNet50_Weights.IMAGENET1K_V2)
         model_res.fc = torch.nn.Identity()
         assert not opt.greyscale
         feature_dim = 2048
+        encoder_models.append(transform)
         encoder_models.append(model_res)
     elif opt.encoder.startswith('raw'):
         feature_dim = 60 * 80
@@ -99,6 +100,7 @@ def main(args):
         launch_experiment(args, run_dicts, seeds,args.experiment_name, device, models_dict)
     else:
         envs = create_envs(args, args.num_envs)
+
         train(opt= args, envs= envs,model_path= model_path,device =device, models_dict= models_dict)
     
 if __name__ == '__main__':

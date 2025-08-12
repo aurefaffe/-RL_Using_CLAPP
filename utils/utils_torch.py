@@ -3,7 +3,16 @@ import torch
 from torch.optim import Optimizer
 from torch import lerp
 from torch.optim.lr_scheduler import SequentialLR, CosineAnnealingLR, LinearLR
-class TorchDeque:
+import torch.nn as nn
+
+class InfoNceLoss():
+    def __call__(self, real, positive, negatives):
+        similarities = torch.cosine_similarity(real, torch.cat((positive, negatives), dim= 0)).unsqueeze(0)
+        criterion = nn.CrossEntropyLoss()
+        return criterion(similarities, torch.tensor([0], device= similarities.device))
+
+
+class TorchDeque():
 
     def __init__(self, maxlen, num_features,dtype, device):
         self.maxlen = maxlen
@@ -21,14 +30,50 @@ class TorchDeque:
             self.start = (self.start + 1) % self.maxlen
         else:
             self.size += 1
+        old = self.memory[self.index]
         self.memory[self.index] = data  
         self.index = (self.index + 1) % self.maxlen
+        return old
+    
+    def sample(self, num_samples):
+
+        indices = torch.randperm(torch.tensor(min(num_samples, self.size)))[: num_samples]
+        return self.memory[indices]
         
     def get_all_content_as_tensor(self):
         return torch.roll(self.memory, -self.start, dims= 0).flatten()
     
     def __sizeof__(self):
         return self.size
+ 
+class Cascade_Memory():
+    def __init__(self, memory_sizes, num_features, device):
+        self.memory_sizes = memory_sizes
+        self.num_features = num_features
+        self.device = device
+        self.recent = TorchDeque(memory_sizes[0], num_features, torch.float32, device)
+        self.intermediate = TorchDeque(memory_sizes[1], num_features, torch.float32, device)
+        self.old = TorchDeque(memory_sizes[2], num_features, torch.float32, device)
+
+    def push(self, data):
+        x = self.recent.push(data)
+        if x != None:
+            x = self.intermediate.push(x)
+        if x != None:
+            x = self.old.push(x)
+        
+    def sample_recent(self, num_samples):
+        return self.recent.sample(num_samples)
+    
+    def sample_old(self, num_samples):
+        return self.old.sample(num_samples)
+    
+    def full(self):
+        return self.old.size == self.memory_sizes[2]
+    def reset(self):
+        self.recent = TorchDeque(self.memory_sizes[0], self.num_features, torch.float32, self.device)
+        self.intermediate =  TorchDeque(self.memory_sizes[1], self.num_features, torch.float32, self.device)
+        self.old = TorchDeque(self.memory_sizes[2], self.num_features, torch.float32, self.device)
     
 
 class CosineAnnealingWarmupLr(SequentialLR):
