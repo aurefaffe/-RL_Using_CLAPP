@@ -113,8 +113,8 @@ def actor_critic_metrics(opt, epoch, variables):
     if opt.algorithm == 'actor_critic':
         dict_metrics['loss_actor'] = tot_loss_actor/length_episode
         dict_metrics['loss_critic'] = tot_loss_critic/length_episode
-    if opt.use_encoder_predictive:
-        dict_metrics['encoding_loss'] = tot_encoding_loss/length_episode
+    # if opt.use_encoder_predictive:
+    #     dict_metrics['encoding_loss'] = tot_encoding_loss/length_episode
     mlflow.log_metrics(dict_metrics, step= epoch)
 
 

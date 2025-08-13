@@ -41,8 +41,22 @@ class FourRoomsMaze(MiniWorldEnv, utils.EzPickle):
 
     """
 
-    def __init__(self, **kwargs):
-        MiniWorldEnv.__init__(self, max_episode_steps=250, **kwargs)
+    def __init__(self, reward=True, visible_reward = True, add_obstacles = False, add_visual_cue_object = False, intermediate_rewards = False,reward_left = True,
+                 probability_of_left = 0.5,latent_learning = False, add_visual_cue_image = False, left_arm = True, right_arm = True, remove_images = False, **kwargs):
+        self.reward = reward
+        self.visible_reward = visible_reward    
+        self.latent_learning = latent_learning
+        self.intermediate_rewards = intermediate_rewards
+        self.add_obstacles = add_obstacles
+        self.reward_left = reward_left
+        self.add_visual_cue_object = add_visual_cue_object
+        self.add_visual_cue_image = add_visual_cue_image
+        self.probability_of_left = probability_of_left
+        self.left_arm = left_arm
+        self.right_arm = right_arm
+        self.remove_images = remove_images
+        
+        MiniWorldEnv.__init__(self, **kwargs)
         utils.EzPickle.__init__(self, **kwargs)
 
         # Allow only the movement actions
@@ -64,8 +78,9 @@ class FourRoomsMaze(MiniWorldEnv, utils.EzPickle):
         self.connect_rooms(room2, room3, min_z=-5, max_z=-3, max_y=2)
         self.connect_rooms(room3, room0, min_x=-5, max_x=-3, max_y=2)
 
-        self.box = self.place_entity(Box(color="red"))
+        self.box = self.place_entity(Box(color="red", size=0),pos=[-3, 0, -3])
 
+        self.agent.radius = 0.25
         self.place_agent()
 
         self.pos_list = [
@@ -147,6 +162,14 @@ class FourRoomsMaze(MiniWorldEnv, utils.EzPickle):
                     )
 
                 )
+    def move_agent(self, fwd_dist, fwd_drift):
+        
+        fwd_dist = 3 * 0.15 
+       
+        return super().move_agent(fwd_dist, fwd_drift)
+    def turn_agent(self, turn_angle):
+        turn_angle *= 3 
+        return super().turn_agent(turn_angle)
 
     def step(self, action):
         obs, reward, termination, truncation, info = super().step(action)

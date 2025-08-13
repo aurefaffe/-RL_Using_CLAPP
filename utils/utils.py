@@ -121,12 +121,12 @@ def create_envs(args, num_envs, reward = True):
     )
     elif args.environment == 'T_maze/custom_Four_Maze_V0.py':
         gym.envs.register(
-            id='MyMaze-v0',
+            id='MyTMaze-v0',
             entry_point='envs.T_maze.custom_Four_Maze_V0:FourRoomsMaze',
         )
     elif args.environment == 'T_maze/custom_Maze_V0.py':
         gym.envs.register(
-            id='MyMaze-v0',
+            id='MyTMaze-v0',
             entry_point='envs.T_maze.custom_Maze_V0:Maze',
         )
     
