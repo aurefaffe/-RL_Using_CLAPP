@@ -4,7 +4,7 @@ from miniworld.miniworld import MiniWorldEnv
 from miniworld.entity import Box, ImageFrame
 from miniworld.manual_control import ManualControl
 import math
-
+import numpy as np
 from miniworld.entity import Box
 from miniworld.miniworld import MiniWorldEnv
 
@@ -78,10 +78,11 @@ class FourRoomsMaze(MiniWorldEnv, utils.EzPickle):
         self.connect_rooms(room2, room3, min_z=-5, max_z=-3, max_y=2)
         self.connect_rooms(room3, room0, min_x=-5, max_x=-3, max_y=2)
 
-        self.box = self.place_entity(Box(color="red", size=0),pos=[-3, 0, -3])
+        self.box =Box(color="red") 
+        self.box.pos = np.array([-3,0,-3])
 
         self.agent.radius = 0.25
-        self.place_agent()
+        self.place_agent(pos=np.array([3, 0, 5]))
 
         self.pos_list = [
             [-7, 1, 7 - 1.05],
@@ -156,7 +157,8 @@ class FourRoomsMaze(MiniWorldEnv, utils.EzPickle):
             0, 0, 0, math.pi / 2, math.pi / 2, math.pi, math.pi
         ]
         for i, (pos_, dir_) in enumerate(zip(self.pos_list, self.dir_list)):
-                self.entities.append(
+                # if i%5==0:
+                    self.entities.append(
                     ImageFrame(
                         pos=pos_, dir=dir_, width=2, tex_name="stl{}".format(i )
                     )

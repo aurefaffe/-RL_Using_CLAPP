@@ -23,6 +23,8 @@ def parsing():
     parser.add_argument('--visible_reward', action= 'store_true', help= 'If the reward is a visible red box or not')
     parser.add_argument('--max_episode_steps', default= 1000, help= 'max number of steps per environment')
     parser.add_argument('--no_images', action='store_true', help='wether to have the maze without any images')
+    parser.add_argument('--num_rows', type=int, default=5, help='number of rows in the maze')
+    parser.add_argument('--num_cols', type=int, default=5, help='number of columns in the maze')
     #arguments for the training
     parser.add_argument('--algorithm',default= 'actor_critic', help= 'type of RL algorithm to use')
     parser.add_argument('--encoder', default= "CLAPP", help="decide which encoder to use")
@@ -119,19 +121,24 @@ def create_envs(args, num_envs, reward = True):
         id='MyTMaze-v0',
         entry_point='envs.T_maze.custom_T_Maze_V0:MyTmaze'
     )
+     envs =gym.make_vec("MyTMaze", num_envs= num_envs,  
+                       max_episode_steps= args.max_episode_steps, render_mode = 'human' if args.render else None, visible_reward = args.visible_reward, reward = reward, remove_images = args.no_images)
+
     elif args.environment == 'T_maze/custom_Four_Maze_V0.py':
         gym.envs.register(
             id='MyTMaze-v0',
             entry_point='envs.T_maze.custom_Four_Maze_V0:FourRoomsMaze',
         )
+        envs =gym.make_vec("MyTMaze", num_envs= num_envs,  
+                       max_episode_steps= args.max_episode_steps, render_mode = 'human' if args.render else None, visible_reward = args.visible_reward, reward = reward, remove_images = args.no_images)
+        
     elif args.environment == 'T_maze/custom_Maze_V0.py':
         gym.envs.register(
             id='MyTMaze-v0',
             entry_point='envs.T_maze.custom_Maze_V0:Maze',
         )
-    
-    envs =gym.make_vec("MyTMaze", num_envs= num_envs,  
-                       max_episode_steps= args.max_episode_steps, render_mode = 'human' if args.render else None, visible_reward = args.visible_reward, reward = reward, remove_images = args.no_images)
+        envs =gym.make_vec("MyTMaze", num_envs= num_envs,  
+                       max_episode_steps= args.max_episode_steps, render_mode = 'human' if args.render else None, visible_reward = args.visible_reward, reward = reward, remove_images = args.no_images, num_rows = args.num_rows, num_cols = args.num_cols)
 
     if args.greyscale:
         envs = gym.wrappers.vector.GrayscaleObservation(envs)

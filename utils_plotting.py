@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 from RL_algorithms.models import CriticModel, ActorModel
-from dimensionality_reduction import PCA
+from utils.dimensionality_reduction import PCA
 orientations = [0, 45, 90, 135, 180, 225, 270, 315]
 positions = [[1.37, 0, 0], [1.37, 0, 0], [4.11, 0, 0], [4.11, 0, 0], [6.8500000000000005, 0, 0], 
                  [6.8500000000000005, 0, 0], [9.78, 0, -5.4799999999999995], [9.78, 0, -2.7399999999999993], 
@@ -239,19 +239,22 @@ def plot_runs():
         #ini_no_target = compute_moving_average('/Volumes/lcncluster/cormorec/rl_with_clapp/mlruns/910472378570111075/c64f82c8acdb4bd8b758891bb190328d/metrics/length_episode', t)
         #good_ac =  compute_moving_average('/Volumes/lcncluster/cormorec/rl_with_clapp/mlruns/508181377465869700/6e353a1dca9c42038043434be8c57f30/metrics/length_episode', t)
         #one_hot_ac = compute_moving_average('mlruns/647803037565373307/802c653dc9504059b3004a5ffc76809b/metrics/length_episode', t)
-        just_bias = compute_moving_average('/Volumes/lcncluster/cormorec/rl_with_clapp/mlruns/509629523065386057/360ac29b422d4b239c9a556bf40993e6/metrics/length_episode', t)  
-        random_baseline =  compute_moving_average('mlruns/910444605774049268/8497d5a727224391bd3361e1759a68e6/metrics/length_episode', t)
-        try2layers1 = compute_moving_average('/Volumes/lcncluster/cormorec/rl_with_clapp/mlruns/509629523065386057/f376f623caad440c855f194ca708a13e/metrics/length_episode', t)  
+        # just_bias = compute_moving_average('/Volumes/lcncluster/cormorec/rl_with_clapp/mlruns/509629523065386057/360ac29b422d4b239c9a556bf40993e6/metrics/length_episode', t)  
+        # random_baseline =  compute_moving_average('mlruns/910444605774049268/8497d5a727224391bd3361e1759a68e6/metrics/length_episode', t)
+        # try2layers1 = compute_moving_average('/Volumes/lcncluster/cormorec/rl_with_clapp/mlruns/509629523065386057/f376f623caad440c855f194ca708a13e/metrics/length_episode', t)  
 
-        comp_clapp1 = compute_moving_average('/Volumes/lcncluster/cormorec/rl_with_clapp/mlruns/376693154063831747/75ed0c8d234d43fea9e01bf0bf085294/metrics/length_episode', t)  
-        comp_raw1 = compute_moving_average('/Volumes/lcncluster/cormorec/rl_with_clapp/mlruns/376693154063831747/b9403527cce14e4b924ad61afea8ae58/metrics/length_episode', t)  
-        comp_res1 = compute_moving_average('/Volumes/lcncluster/cormorec/rl_with_clapp/mlruns/376693154063831747/e7bec4c9a46548a8bc369493c918863f/metrics/length_episode', t)  
+        # comp_clapp1 = compute_moving_average('/Volumes/lcncluster/cormorec/rl_with_clapp/mlruns/376693154063831747/75ed0c8d234d43fea9e01bf0bf085294/metrics/length_episode', t)  
+        # comp_raw1 = compute_moving_average('/Volumes/lcncluster/cormorec/rl_with_clapp/mlruns/376693154063831747/b9403527cce14e4b924ad61afea8ae58/metrics/length_episode', t)  
+        # comp_res1 = compute_moving_average('/Volumes/lcncluster/cormorec/rl_with_clapp/mlruns/376693154063831747/e7bec4c9a46548a8bc369493c918863f/metrics/length_episode', t)  
 
-        comp_clapp5 = compute_moving_average('/Volumes/lcncluster/cormorec/rl_with_clapp/mlruns/376693154063831747/139af87b5c2544a49187a121364e22f1/metrics/length_episode', t)  
-        comp_raw5 = compute_moving_average('/Volumes/lcncluster/cormorec/rl_with_clapp/mlruns/376693154063831747/496bd3aa35334a428d14d3b6dacd9cdf/metrics/length_episode', t)  
+        # comp_clapp5 = compute_moving_average('/Volumes/lcncluster/cormorec/rl_with_clapp/mlruns/376693154063831747/139af87b5c2544a49187a121364e22f1/metrics/length_episode', t)  
+        # comp_raw5 = compute_moving_average('/Volumes/lcncluster/cormorec/rl_with_clapp/mlruns/376693154063831747/496bd3aa35334a428d14d3b6dacd9cdf/metrics/length_episode', t)  
 
-        no_images5 = compute_moving_average('/Volumes/lcncluster/cormorec/rl_with_clapp/mlruns/376693154063831747/b6801b24e6574f2eb31e8a32c29bdafa/metrics/length_episode', t)  
-        
+        # no_images5 = compute_moving_average('/Volumes/lcncluster/cormorec/rl_with_clapp/mlruns/376693154063831747/b6801b24e6574f2eb31e8a32c29bdafa/metrics/length_episode', t)  
+        wsh_alors_4maze = compute_moving_average("Z:\cormorec\\rl_with_clapp\mlruns\\696466677696887177\\5ce17239f27e4d29a04f6656fbe8161b\metrics\\run length", t)
+        wsh_alors_4maze2 = compute_moving_average("Z:\cormorec\\rl_with_clapp\mlruns\\696466677696887177\\b0457ac4f7ff4b13b0da422c0f894e56\metrics\\length_episode", t)
+        wsh_alors_4maze3 = compute_moving_average("Z:\cormorec\\rl_with_clapp\mlruns\\696466677696887177\\906c7884efa146e4ac9eb0c43482e827\metrics\\length_episode", t)
+
         #plt.plot(baseline_2)
         #plt.plot(baseline_resnet)
         #plt.plot(ini_target)
@@ -266,7 +269,9 @@ def plot_runs():
         #plt.plot(comp_raw5)
         #plt.plot(comp_clapp5)
         #plt.plot(no_images5)
-        plt.plot(comp_res1)
+        plt.plot(wsh_alors_4maze)
+        plt.plot(wsh_alors_4maze2)
+        plt.plot(wsh_alors_4maze3)
 
         plt.show()
 
